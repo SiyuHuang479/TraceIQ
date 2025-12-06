@@ -140,17 +140,16 @@ def run_nl_to_sql_rag(user_prompt:str, tools):
     response_to_llm = client.models.generate_content(
         model=MODEL_NAME,
         contents=[
-            # 1. 用户问题
+            # 1. user prompt
             types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]), 
             
-            # 2. LLM 的函数调用 - 使用 from_function_call 并传入转换后的字典
-            # 这是最干净的方式，让 SDK 内部处理类型转换
+            # 2. LLM function call
             types.Content(
                 role="model", 
                 parts=[types.Part.from_function_call(**function_call_dict)] # <-- 传入解包后的字典！
             ),
             
-            # 3. 工具的执行结果 - 使用 from_function_response 并传入转换后的字典
+            # 3. execution results
             types.Content(
                 role="tool", 
                 parts=[types.Part.from_function_response(**tool_response_dict)] # <-- 传入解包后的字典！

@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CS451 DLRM 集群 RAG 演示</title>
+    <title>CS451 DLRM Cluster RAG Demo</title>
     <style>
+        /* General body and container styling */
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #f4f7f6;
@@ -30,6 +31,7 @@
             color: #007bff;
             font-size: 2em;
         }
+        /* Introduction Box Styling */
         .intro-box {
             background-color: #e9f7fe;
             border: 1px solid #b3e0ff;
@@ -37,6 +39,7 @@
             border-radius: 8px;
             margin-bottom: 20px;
         }
+        /* Chat Window Styling */
         .chat-window {
             height: 400px;
             overflow-y: auto;
@@ -68,6 +71,7 @@
             text-align: left;
             border-bottom-left-radius: 4px;
         }
+        /* SQL Query Display */
         .sql-query {
             background-color: #fff3cd;
             border-left: 3px solid #ffc107;
@@ -78,6 +82,7 @@
             white-space: pre-wrap;
             color: #856404;
         }
+        /* Input Form Styling */
         form {
             display: flex;
         }
@@ -106,19 +111,19 @@
 
 <div class="container">
     <header>
-        <h1>🤖 DLRM 集群调度分析机器人 </h1>
+        <h1>🤖 DLRM Cluster Scheduling Analyzer </h1>
         <p>CS451: Data Intensive Distributed Computing Final Project</p>
     </header>
 
     <div class="intro-box">
-        <h3>项目背景介绍：</h3>
-        <p>这是一个基于 **Spark 驱动的 NL-to-SQL RAG 系统**，旨在通过自然语言查询阿里巴巴 GPU 解耦推理集群（DLRM Trace）的调度数据。</p>
-        <p>后端使用 **FastAPI (MCP)** 接收问题，通过 **Gemini Function Calling** 将问题转化为 **Spark SQL**，并在 **PySpark** 上执行分布式查询。</p>
-        <p><strong>你可以尝试以下问题：</strong></p>
+        <h3>Project Background:</h3>
+        <p>This is a **Spark-driven NL-to-SQL RAG System** designed to query the scheduling trace data from the Alibaba GPU Disaggregated Inference Cluster (DLRM Trace) using natural language.</p>
+        <p>The backend uses **FastAPI (MCP)** to receive queries, transforms them into **Spark SQL** via **Gemini Function Calling**, and executes the distributed query on **PySpark**.</p>
+        <p><strong>Example Queries to Try:</strong></p>
         <ul>
-            <li>“统计一下 CN 和 HN 角色各有多少个实例？”</li>
-            <li>“内存请求量最大的前 5 个应用是什么？”</li>
-            <li>“CN 实例的平均调度延迟是多少？”</li>
+            <li>"Count the number of instances for CN and HN roles."</li>
+            <li>"What are the top 5 applications with the highest memory request?"</li>
+            <li>"What is the average scheduling delay for CN instances?"</li>
         </ul>
     </div>
 
@@ -126,8 +131,8 @@
         </div>
 
     <form id="chatForm">
-        <input type="text" id="promptInput" placeholder="请输入你的查询..." required>
-        <button type="submit" id="sendButton">发送</button>
+        <input type="text" id="promptInput" placeholder="Enter your query..." required>
+        <button type="submit" id="sendButton">Send</button>
     </form>
 
     <div id="statusMessage" style="margin-top: 15px; color: red;"></div>
@@ -142,7 +147,7 @@
     const statusMessage = document.getElementById('statusMessage');
 
     // ------------------------------------
-    // 辅助函数：显示消息
+    // Helper Function: Append Message to UI
     // ------------------------------------
     function appendMessage(sender, text, query = null) {
         const messageDiv = document.createElement('div');
@@ -160,25 +165,25 @@
         }
 
         chatWindow.appendChild(messageDiv);
-        chatWindow.scrollTop = chatWindow.scrollHeight; // 滚动到底部
+        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom
     }
 
     // ------------------------------------
-    // 核心函数：发送请求并处理响应
+    // Core Function: Send Request and Handle Response
     // ------------------------------------
     async function sendMessage(prompt) {
         if (!prompt.trim()) return;
 
-        // 1. 显示用户消息
+        // 1. Display user message
         appendMessage('user', prompt);
         
-        // 禁用输入和按钮
+        // Disable input and button
         promptInput.disabled = true;
         sendButton.disabled = true;
-        statusMessage.textContent = '思考中... (Gemini 正在生成 SQL)';
+        statusMessage.textContent = 'Thinking... (Gemini is generating SQL)';
 
         try {
-            // 2. 发送请求到 FastAPI 的 /api/chat 接口
+            // 2. Send request to FastAPI's /api/chat endpoint
             const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
@@ -188,22 +193,22 @@
             });
 
             if (!response.ok) {
-                statusMessage.textContent = `后端错误：${response.statusText}`;
-                appendMessage('bot', `抱歉，服务器执行查询失败。请查看终端日志。`, null);
+                statusMessage.textContent = `Backend Error: ${response.statusText}`;
+                appendMessage('bot', `Sorry, the server failed to execute the query. Please check the terminal logs.`, null);
                 return;
             }
 
             const data = await response.json();
             
-            statusMessage.textContent = '正在总结答案...';
+            statusMessage.textContent = 'Summarizing answer...';
 
-            // 3. 显示机器人回复
+            // 3. Display bot response
             let botText = data.response;
             let sqlQuery = data.sql_query;
 
-            // 检查是否有错误信息
+            // Check for error messages
             if (botText && botText.includes("Error")) {
-                 statusMessage.textContent = 'RAG 流程失败';
+                 statusMessage.textContent = 'RAG Process Failed';
                  appendMessage('bot', botText, sqlQuery);
             } else {
                  statusMessage.textContent = '';
@@ -213,10 +218,10 @@
 
         } catch (error) {
             console.error('Fetch Error:', error);
-            statusMessage.textContent = '无法连接到后端服务器 (http://localhost:8000)。请确保 mcp_server.py 正在运行。';
-            appendMessage('bot', `连接错误：无法获取数据。`, null);
+            statusMessage.textContent = 'Could not connect to the backend server (http://localhost:8000). Please ensure mcp_server.py is running.';
+            appendMessage('bot', `Connection Error: Failed to fetch data.`, null);
         } finally {
-            // 恢复输入状态
+            // Restore input state
             promptInput.value = '';
             promptInput.disabled = false;
             sendButton.disabled = false;
@@ -225,7 +230,7 @@
     }
 
     // ------------------------------------
-    // 事件监听器
+    // Event Listener
     // ------------------------------------
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -233,9 +238,9 @@
         sendMessage(prompt);
     });
 
-    // 启动时检查后端连接
+    // Initial load message
     window.onload = () => {
-        appendMessage('bot', '欢迎使用集群调度 RAG 系统！请在下方输入你的数据查询问题。', null);
+        appendMessage('bot', 'Welcome to the Cluster Scheduling RAG System! Please enter your data query below.', null);
     }
 </script>
 

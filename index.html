@@ -5,105 +5,177 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CS451 DLRM Cluster RAG Demo</title>
     <style>
-        /* General body and container styling */
+        /* Gemini Style Base Colors */
+        :root {
+            --bg-color: #171717; /* Dark background */
+            --container-bg: #212121; /* Slightly lighter container/card */
+            --text-color: #e0e0e0;
+            --primary-color: #4285f4; /* Google Blue */
+            --input-bg: #3c4043; /* Dark input field */
+            --bot-bubble-bg: #3c4043; /* Bot message background */
+            --user-bubble-bg: #4285f4; /* User message background */
+            --sql-bg: #f8c0571a; /* Light warning for SQL (Yellow-Orange transparent) */
+            --sql-border: #f8c057;
+            --header-border: #424242; /* Divider color */
+        }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f4f7f6;
+            font-family: 'Google Sans', sans-serif; /* Use a modern, clean font */
+            background-color: var(--bg-color);
             margin: 0;
-            padding: 20px;
-            color: #333;
+            padding: 0;
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
         }
+
         .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background-color: #fff;
-            padding: 25px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            border-radius: 12px;
+            max-width: 800px; /* Slimmer container */
+            width: 100%;
+            margin-top: 50px;
+            margin-bottom: 20px;
+            background-color: var(--container-bg);
+            padding: 0; /* Remove container padding for full-width card look */
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+            border-radius: 20px; /* Stronger rounded corners */
+            overflow: hidden;
+            
+            /* Core for Fixed Bottom Input */
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 40px); 
         }
+
+        /* Header (App Name Section) */
         header {
-            text-align: center;
-            margin-bottom: 25px;
-            border-bottom: 2px solid #007bff;
-            padding-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            border-bottom: 1px solid var(--header-border);
+            color: var(--text-color);
+            flex-shrink: 0;
         }
         header h1 {
-            color: #007bff;
-            font-size: 2em;
+            font-size: 1.2em;
+            font-weight: 500;
+            margin: 0;
         }
-        /* Introduction Box Styling */
+
+        /* Intro Box Styling - Mimics Gemini's information cards */
         .intro-box {
-            background-color: #e9f7fe;
-            border: 1px solid #b3e0ff;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background-color: transparent;
+            padding: 25px;
+            border-bottom: 1px solid var(--header-border);
+            flex-shrink: 0;
         }
-        /* Chat Window Styling */
+        .intro-box h3 {
+            color: var(--primary-color);
+            font-size: 1.1em;
+            margin-top: 0;
+        }
+        .intro-box p, .intro-box li {
+            font-size: 0.9em;
+            color: #b0b0b0;
+            line-height: 1.5;
+        }
+
+        /* Chat Window */
         .chat-window {
-            height: 400px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 15px;
-            margin-bottom: 15px;
-            background-color: #fafafa;
-            border-radius: 8px;
+            flex-grow: 1; /* Occupies remaining vertical space */
+            overflow-y: auto; /* Scrollable chat history */
+            padding: 20px 25px;
+            background-color: var(--container-bg);
         }
+
+        /* Message Bubbles */
         .message {
-            margin-bottom: 15px;
-            padding: 8px 12px;
-            border-radius: 18px;
-            max-width: 80%;
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            border-radius: 12px;
+            max-width: 85%;
             line-height: 1.5;
             word-wrap: break-word;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
         .user {
-            background-color: #007bff;
+            background-color: var(--user-bubble-bg);
             color: white;
             margin-left: auto;
-            text-align: right;
-            border-bottom-right-radius: 4px;
+            text-align: left;
         }
         .bot {
-            background-color: #e0e0e0;
-            color: #333;
+            background-color: var(--bot-bubble-bg);
+            color: var(--text-color);
             margin-right: auto;
             text-align: left;
-            border-bottom-left-radius: 4px;
         }
-        /* SQL Query Display */
+
+        /* SQL Query Display (Code block style) */
         .sql-query {
-            background-color: #fff3cd;
-            border-left: 3px solid #ffc107;
-            padding: 8px;
-            margin-top: 5px;
+            background-color: var(--sql-bg);
+            border-left: 3px solid var(--sql-border);
+            padding: 10px;
+            margin-top: 10px;
             font-family: monospace;
-            font-size: 0.9em;
+            font-size: 0.8em;
             white-space: pre-wrap;
-            color: #856404;
+            color: var(--sql-border);
+            border-radius: 4px;
         }
-        /* Input Form Styling */
+
+        /* Input Form Area (Sticks to the bottom) */
+        .input-area {
+            padding: 20px 25px;
+            background-color: var(--container-bg);
+            border-top: 1px solid var(--header-border);
+            flex-shrink: 0; /* Prevents shrinking */
+            position: sticky; /* Sticky positioning */
+            bottom: 0; /* Sticks to the bottom of the scrollable container */
+            z-index: 10;
+        }
+
         form {
             display: flex;
+            background-color: var(--input-bg);
+            border-radius: 25px; 
+            padding: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
         }
         input[type="text"] {
             flex-grow: 1;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 6px 0 0 6px;
+            padding: 10px 15px;
+            border: none;
+            background-color: transparent;
+            color: var(--text-color);
+            border-radius: 25px;
             font-size: 1em;
+            outline: none;
+        }
+        input[type="text"]::placeholder {
+            color: #888;
         }
         button {
-            padding: 10px 15px;
-            background-color: #28a745;
+            padding: 10px 20px;
+            background-color: var(--primary-color);
             color: white;
             border: none;
-            border-radius: 0 6px 6px 0;
+            border-radius: 25px;
             cursor: pointer;
             font-size: 1em;
+            margin: 0 5px 0 0;
+            transition: background-color 0.2s;
         }
         button:hover {
-            background-color: #218838;
+            background-color: #357ae8;
+        }
+        #statusMessage {
+            margin-top: 10px;
+            text-align: center;
+            color: #ff5252;
+            font-size: 0.9em;
         }
     </style>
 </head>
@@ -111,8 +183,8 @@
 
 <div class="container">
     <header>
-        <h1>🤖 DLRM Cluster Scheduling Analyzer </h1>
-        <p>CS451: Data Intensive Distributed Computing Final Project</p>
+        <h1>CS451 Final Project </h1>
+        <div style="font-size: 1.5em; color: #424242;">h</div>
     </header>
 
     <div class="intro-box">
@@ -130,12 +202,13 @@
     <div class="chat-window" id="chatWindow">
         </div>
 
-    <form id="chatForm">
-        <input type="text" id="promptInput" placeholder="Enter your query..." required>
-        <button type="submit" id="sendButton">Send</button>
-    </form>
-
-    <div id="statusMessage" style="margin-top: 15px; color: red;"></div>
+    <div class="input-area">
+        <form id="chatForm">
+            <input type="text" id="promptInput" placeholder="Enter your query..." required>
+            <button type="submit" id="sendButton">Send</button>
+        </form>
+        <div id="statusMessage" style="margin-top: 10px;"></div>
+    </div>
 </div>
 
 <script>
@@ -154,13 +227,14 @@
         messageDiv.classList.add('message', sender);
         
         let content = document.createElement('p');
-        content.innerHTML = text;
+        // Simple sanitization for markdown bolding
+        content.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); 
         messageDiv.appendChild(content);
 
         if (query) {
             const sqlDiv = document.createElement('div');
             sqlDiv.classList.add('sql-query');
-            sqlDiv.textContent = `SQL: ${query}`;
+            sqlDiv.textContent = `SQL Query Generated: ${query}`;
             messageDiv.appendChild(sqlDiv);
         }
 
@@ -180,7 +254,7 @@
         // Disable input and button
         promptInput.disabled = true;
         sendButton.disabled = true;
-        statusMessage.textContent = 'Thinking... (Gemini is generating SQL)';
+        statusMessage.textContent = 'Thinking... (Generating SQL via Gemini)';
 
         try {
             // 2. Send request to FastAPI's /api/chat endpoint
@@ -200,7 +274,7 @@
 
             const data = await response.json();
             
-            statusMessage.textContent = 'Summarizing answer...';
+            statusMessage.textContent = 'Summarizing results...';
 
             // 3. Display bot response
             let botText = data.response;
@@ -218,7 +292,7 @@
 
         } catch (error) {
             console.error('Fetch Error:', error);
-            statusMessage.textContent = 'Could not connect to the backend server (http://localhost:8000). Please ensure mcp_server.py is running.';
+            statusMessage.textContent = 'Connection Error: Could not reach the backend server (http://localhost:8000). Please ensure mcp_server.py is running.';
             appendMessage('bot', `Connection Error: Failed to fetch data.`, null);
         } finally {
             // Restore input state

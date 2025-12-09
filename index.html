@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CS451 DLRM Cluster RAG Demo</title>
+    <style>
+        /* Gemini Style Base Colors */
+        :root {
+            --bg-color: #171717; /* Dark background */
+            --container-bg: #212121; /* Slightly lighter container/card */
+            --text-color: #e0e0e0;
+            --primary-color: #4285f4; /* Google Blue */
+            --input-bg: #3c4043; /* Dark input field */
+            --bot-bubble-bg: #3c4043; /* Bot message background */
+            --user-bubble-bg: #4285f4; /* User message background */
+            --sql-bg: #f8c0571a; /* Light warning for SQL (Yellow-Orange transparent) */
+            --sql-border: #f8c057;
+            --header-border: #424242; /* Divider color */
+        }
+
+        body {
+            font-family: 'Google Sans', sans-serif; /* Use a modern, clean font */
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 0;
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px; /* Slimmer container */
+            width: 100%;
+            margin-top: 50px;
+            margin-bottom: 20px;
+            background-color: var(--container-bg);
+            padding: 0; /* Remove container padding for full-width card look */
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+            border-radius: 20px; /* Stronger rounded corners */
+            overflow: hidden;
+            
+            /* Core for Fixed Bottom Input */
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 40px); 
+        }
+
+        /* Header (App Name Section) */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 25px;
+            border-bottom: 1px solid var(--header-border);
+            color: var(--text-color);
+            flex-shrink: 0;
+        }
+        header h1 {
+            font-size: 1.2em;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        /* Intro Box Styling - Mimics Gemini's information cards */
+        .intro-box {
+            background-color: transparent;
+            padding: 25px;
+            border-bottom: 1px solid var(--header-border);
+            flex-shrink: 0;
+        }
+        .intro-box h3 {
+            color: var(--primary-color);
+            font-size: 1.1em;
+            margin-top: 0;
+        }
+        .intro-box p, .intro-box li {
+            font-size: 0.9em;
+            color: #b0b0b0;
+            line-height: 1.5;
+        }
+
+        /* Chat Window */
+        .chat-window {
+            flex-grow: 1; /* Occupies remaining vertical space */
+            overflow-y: auto; /* Scrollable chat history */
+            padding: 20px 25px;
+            background-color: var(--container-bg);
+        }
+
+        /* Message Bubbles */
+        .message {
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            border-radius: 12px;
+            max-width: 85%;
+            line-height: 1.5;
+            word-wrap: break-word;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .user {
+            background-color: var(--user-bubble-bg);
+            color: white;
+            margin-left: auto;
+            text-align: left;
+        }
+        .bot {
+            background-color: var(--bot-bubble-bg);
+            color: var(--text-color);
+            margin-right: auto;
+            text-align: left;
+        }
+
+        /* SQL Query Display (Code block style) */
+        .sql-query {
+            background-color: var(--sql-bg);
+            border-left: 3px solid var(--sql-border);
+            padding: 10px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 0.8em;
+            white-space: pre-wrap;
+            color: var(--sql-border);
+            border-radius: 4px;
+        }
+
+        /* Input Form Area (Sticks to the bottom) */
+        .input-area {
+            padding: 20px 25px;
+            background-color: var(--container-bg);
+            border-top: 1px solid var(--header-border);
+            flex-shrink: 0; /* Prevents shrinking */
+            position: sticky; /* Sticky positioning */
+            bottom: 0; /* Sticks to the bottom of the scrollable container */
+            z-index: 10;
+        }
+
+        form {
+            display: flex;
+            background-color: var(--input-bg);
+            border-radius: 25px; 
+            padding: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 10px 15px;
+            border: none;
+            background-color: transparent;
+            color: var(--text-color);
+            border-radius: 25px;
+            font-size: 1em;
+            outline: none;
+        }
+        input[type="text"]::placeholder {
+            color: #888;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            margin: 0 5px 0 0;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #357ae8;
+        }
+        #statusMessage {
+            margin-top: 10px;
+            text-align: center;
+            color: #ff5252;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>CS451 Final Project </h1>
+        <div style="font-size: 1.5em; color: #424242;">h</div>
+    </header>
+
+    <div class="intro-box">
+        <h3>Project Background:</h3>
+        <p>This is a **Spark-driven NL-to-SQL RAG System** designed to query the scheduling trace data from the Alibaba GPU Disaggregated Inference Cluster (DLRM Trace) using natural language.</p>
+        <p>The backend uses **FastAPI (MCP)** to receive queries, transforms them into **Spark SQL** via **Gemini Function Calling**, and executes the distributed query on **PySpark**.</p>
+        <p><strong>Example Queries to Try:</strong></p>
+        <ul>
+            <li>"Count the number of instances for CN and HN roles."</li>
+            <li>"What are the top 5 applications with the highest memory request?"</li>
+            <li>"What is the average scheduling delay for CN instances?"</li>
+        </ul>
+    </div>
+
+    <div class="chat-window" id="chatWindow">
+        </div>
+
+    <div class="input-area">
+        <form id="chatForm">
+            <input type="text" id="promptInput" placeholder="Enter your query..." required>
+            <button type="submit" id="sendButton">Send</button>
+        </form>
+        <div id="statusMessage" style="margin-top: 10px;"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = 'http://localhost:8000/api/chat';
+    const chatWindow = document.getElementById('chatWindow');
+    const chatForm = document.getElementById('chatForm');
+    const promptInput = document.getElementById('promptInput');
+    const sendButton = document.getElementById('sendButton');
+    const statusMessage = document.getElementById('statusMessage');
+
+    // ------------------------------------
+    // Helper Function: Append Message to UI
+    // ------------------------------------
+    function appendMessage(sender, text, query = null) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', sender);
+        
+        let content = document.createElement('p');
+        // Simple sanitization for markdown bolding
+        content.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); 
+        messageDiv.appendChild(content);
+
+        if (query) {
+            const sqlDiv = document.createElement('div');
+            sqlDiv.classList.add('sql-query');
+            sqlDiv.textContent = `SQL Query Generated: ${query}`;
+            messageDiv.appendChild(sqlDiv);
+        }
+
+        chatWindow.appendChild(messageDiv);
+        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom
+    }
+
+    // ------------------------------------
+    // Core Function: Send Request and Handle Response
+    // ------------------------------------
+    async function sendMessage(prompt) {
+        if (!prompt.trim()) return;
+
+        // 1. Display user message
+        appendMessage('user', prompt);
+        
+        // Disable input and button
+        promptInput.disabled = true;
+        sendButton.disabled = true;
+        statusMessage.textContent = 'Thinking... (Generating SQL via Gemini)';
+
+        try {
+            // 2. Send request to FastAPI's /api/chat endpoint
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ prompt: prompt })
+            });
+
+            if (!response.ok) {
+                statusMessage.textContent = `Backend Error: ${response.statusText}`;
+                appendMessage('bot', `Sorry, the server failed to execute the query. Please check the terminal logs.`, null);
+                return;
+            }
+
+            const data = await response.json();
+            
+            statusMessage.textContent = 'Summarizing results...';
+
+            // 3. Display bot response
+            let botText = data.response;
+            let sqlQuery = data.sql_query;
+
+            // Check for error messages
+            if (botText && botText.includes("Error")) {
+                 statusMessage.textContent = 'RAG Process Failed';
+                 appendMessage('bot', botText, sqlQuery);
+            } else {
+                 statusMessage.textContent = '';
+                 appendMessage('bot', botText, sqlQuery);
+            }
+
+
+        } catch (error) {
+            console.error('Fetch Error:', error);
+            statusMessage.textContent = 'Connection Error: Could not reach the backend server (http://localhost:8000). Please ensure mcp_server.py is running.';
+            appendMessage('bot', `Connection Error: Failed to fetch data.`, null);
+        } finally {
+            // Restore input state
+            promptInput.value = '';
+            promptInput.disabled = false;
+            sendButton.disabled = false;
+            promptInput.focus();
+        }
+    }
+
+    // ------------------------------------
+    // Event Listener
+    // ------------------------------------
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const prompt = promptInput.value;
+        sendMessage(prompt);
+    });
+
+    // Initial load message
+    window.onload = () => {
+        appendMessage('bot', 'Welcome to the Cluster Scheduling RAG System! Please enter your data query below.', null);
+    }
+</script>
+
+</body>
+</html>

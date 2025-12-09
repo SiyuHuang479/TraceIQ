@@ -3,215 +3,213 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CS451 DLRM Cluster RAG Demo</title>
+    <title>TraceIQ - Alibaba DLRM Analyst</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        /* Gemini Style Base Colors */
+        /* --- CSS STYLES --- */
         :root {
-            --bg-color: #171717; /* Dark background */
-            --container-bg: #212121; /* Slightly lighter container/card */
+            --bg-color: #171717;
+            --container-bg: #212121;
             --text-color: #e0e0e0;
-            --primary-color: #4285f4; /* Google Blue */
-            --input-bg: #3c4043; /* Dark input field */
-            --bot-bubble-bg: #3c4043; /* Bot message background */
-            --user-bubble-bg: #4285f4; /* User message background */
-            --sql-bg: #f8c0571a; /* Light warning for SQL (Yellow-Orange transparent) */
+            --primary-color: #4285f4;
+            --input-bg: #3c4043;
+            --bot-bubble-bg: #3c4043;
+            --user-bubble-bg: #4285f4;
+            --sql-bg: #f8c0571a;
             --sql-border: #f8c057;
-            --header-border: #424242; /* Divider color */
+            --header-border: #424242;
         }
 
         body {
-            font-family: 'Google Sans', sans-serif; /* Use a modern, clean font */
+            font-family: 'Google Sans', sans-serif;
             background-color: var(--bg-color);
             margin: 0;
             padding: 0;
             color: var(--text-color);
             display: flex;
             justify-content: center;
-            align-items: flex-start;
+            align-items: center;
             min-height: 100vh;
         }
 
         .container {
-            max-width: 800px; /* Slimmer container */
+            max-width: 900px; /* 稍微加宽一点适应内容 */
             width: 100%;
-            margin-top: 50px;
-            margin-bottom: 20px;
             background-color: var(--container-bg);
-            padding: 0; /* Remove container padding for full-width card look */
             box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
-            border-radius: 20px; /* Stronger rounded corners */
+            border-radius: 20px;
             overflow: hidden;
-            
-            /* Core for Fixed Bottom Input */
             display: flex;
             flex-direction: column;
-            max-height: calc(100vh - 40px); 
         }
 
-        /* Header (App Name Section) */
-        header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 25px;
-            border-bottom: 1px solid var(--header-border);
-            color: var(--text-color);
-            flex-shrink: 0;
-        }
-        header h1 {
-            font-size: 1.2em;
-            font-weight: 500;
-            margin: 0;
-        }
+        /* Pages */
+        #introPage { padding: 50px; text-align: center; }
+        #chatPage { height: calc(100vh - 40px); margin: 20px 0; display: none; }
+        .hidden { display: none !important; }
 
-        /* Intro Box Styling - Mimics Gemini's information cards */
-        .intro-box {
-            background-color: transparent;
+        /* Intro Typography */
+        h1.logo {
+            font-size: 3.5em; font-weight: 700; margin: 0;
+            background: linear-gradient(45deg, #4285f4, #a0cfff);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .badge {
+            background-color: #3c4043; color: #fff; padding: 2px 6px; 
+            border-radius: 4px; font-size: 0.4em; vertical-align: middle; 
+            margin-left: 8px; letter-spacing: 1px;
+        }
+        .dataset-info {
+            background-color: rgba(255,255,255,0.05);
             padding: 25px;
-            border-bottom: 1px solid var(--header-border);
-            flex-shrink: 0;
-        }
-        .intro-box h3 {
-            color: var(--primary-color);
-            font-size: 1.1em;
-            margin-top: 0;
-        }
-        .intro-box p, .intro-box li {
-            font-size: 0.9em;
-            color: #b0b0b0;
-            line-height: 1.5;
-        }
-
-        /* Chat Window */
-        .chat-window {
-            flex-grow: 1; /* Occupies remaining vertical space */
-            overflow-y: auto; /* Scrollable chat history */
-            padding: 20px 25px;
-            background-color: var(--container-bg);
-        }
-
-        /* Message Bubbles */
-        .message {
-            margin-bottom: 20px;
-            padding: 10px 15px;
             border-radius: 12px;
-            max-width: 85%;
-            line-height: 1.5;
-            word-wrap: break-word;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-        .user {
-            background-color: var(--user-bubble-bg);
-            color: white;
-            margin-left: auto;
             text-align: left;
-        }
-        .bot {
-            background-color: var(--bot-bubble-bg);
-            color: var(--text-color);
-            margin-right: auto;
-            text-align: left;
+            margin: 30px 0;
+            border-left: 4px solid var(--primary-color);
         }
 
-        /* SQL Query Display (Code block style) */
+        /* Chat Layout */
+        header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px 25px; border-bottom: 1px solid var(--header-border);
+        }
+        .chat-window {
+            flex-grow: 1; overflow-y: auto; padding: 20px 25px;
+            background-color: var(--container-bg); position: relative;
+        }
+
+        /* Suggestion Cards (New Feature) */
+        .suggestion-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            height: 100%; opacity: 1; transition: opacity 0.3s;
+        }
+        .card-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px; width: 100%; margin-top: 20px;
+        }
+        .suggestion-card {
+            background-color: #2d2d2d; border: 1px solid #444; padding: 15px;
+            border-radius: 10px; cursor: pointer; transition: all 0.2s; text-align: left;
+        }
+        .suggestion-card:hover {
+            background-color: #383838; border-color: var(--primary-color); transform: translateY(-2px);
+        }
+        .card-title { color: var(--primary-color); font-weight: bold; font-size: 0.9em; margin-bottom: 5px; }
+        .card-text { color: #ccc; font-size: 0.85em; margin: 0; line-height: 1.4; }
+
+        /* Messages */
+        .message { margin-bottom: 20px; padding: 10px 15px; border-radius: 12px; max-width: 85%; }
+        .user { background-color: var(--user-bubble-bg); color: white; margin-left: auto; }
+        .bot { background-color: var(--bot-bubble-bg); color: var(--text-color); margin-right: auto; }
+        
+        /* SQL & Plots */
         .sql-query {
-            background-color: var(--sql-bg);
-            border-left: 3px solid var(--sql-border);
-            padding: 10px;
-            margin-top: 10px;
-            font-family: monospace;
-            font-size: 0.8em;
-            white-space: pre-wrap;
-            color: var(--sql-border);
-            border-radius: 4px;
+            background-color: var(--sql-bg); border-left: 3px solid var(--sql-border);
+            padding: 10px; margin-top: 10px; font-family: monospace; font-size: 0.8em;
+            color: var(--sql-border); border-radius: 4px; white-space: pre-wrap;
         }
 
-        /* Input Form Area (Sticks to the bottom) */
-        .input-area {
-            padding: 20px 25px;
-            background-color: var(--container-bg);
-            border-top: 1px solid var(--header-border);
-            flex-shrink: 0; /* Prevents shrinking */
-            position: sticky; /* Sticky positioning */
-            bottom: 0; /* Sticks to the bottom of the scrollable container */
-            z-index: 10;
+        /* Input Area */
+        .input-area { padding: 20px 25px; border-top: 1px solid var(--header-border); }
+        form { display: flex; background-color: var(--input-bg); border-radius: 25px; padding: 5px; }
+        input[type="text"] { flex-grow: 1; padding: 10px 15px; border: none; background: transparent; color: white; outline: none; }
+        .send-btn { background-color: var(--primary-color); color: white; border: none; border-radius: 25px; padding: 10px 20px; cursor: pointer; }
+        .start-btn {
+            background-color: var(--primary-color); color: white; border: none;
+            padding: 15px 40px; font-size: 1.2em; border-radius: 30px; cursor: pointer; font-weight: bold;
         }
+        .start-btn:hover { background-color: #357ae8; transform: scale(1.05); }
 
-        form {
-            display: flex;
-            background-color: var(--input-bg);
-            border-radius: 25px; 
-            padding: 5px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-        }
-        input[type="text"] {
-            flex-grow: 1;
-            padding: 10px 15px;
-            border: none;
-            background-color: transparent;
-            color: var(--text-color);
-            border-radius: 25px;
-            font-size: 1em;
-            outline: none;
-        }
-        input[type="text"]::placeholder {
-            color: #888;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: var(--primary-color);
-            color: white;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 1em;
-            margin: 0 5px 0 0;
-            transition: background-color 0.2s;
-        }
-        button:hover {
-            background-color: #357ae8;
-        }
-        #statusMessage {
-            margin-top: 10px;
-            text-align: center;
-            color: #ff5252;
-            font-size: 0.9em;
-        }
     </style>
 </head>
 <body>
 
-<div class="container">
+<div id="introPage" class="container">
+    <div>
+        <h1 class="logo">TraceIQ</h1>
+        
+        <h2 style="font-weight: 400; color: #b0b0b0; font-size: 1.4em; margin-top: 10px;">
+            Intelligent Observability for Alibaba GPU Clusters
+        </h2>
+        
+        <div style="width: 60px; height: 3px; background-color: var(--primary-color); margin: 30px auto;"></div>
+
+        <div class="dataset-info">
+            <h3 style="margin-top: 0; color: #fff;">About the Data: Alibaba DLRM Trace</h3>
+            <p style="color: #b0b0b0; font-size: 0.95em; line-height: 1.6;">
+                Derived from Alibaba's production environment, this dataset captures the operational characteristics of over <strong>23,000 latency-sensitive inference instances</strong>.
+            </p>
+            <p style="color: #b0b0b0; font-size: 0.95em; line-height: 1.6;">
+                It covers both <strong>CPU-only (CN)</strong> and <strong>Heterogeneous GPU (HN)</strong> nodes, providing a rare opportunity to analyze resource saturation, scheduling bottlenecks, and long-tail latency in large-scale AI serving infrastructure.
+            </p>
+            
+            <p style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.8em; color: #666; font-style: italic;">
+                * Citation: Alibaba Cluster Trace Program, "GPU-Disaggregated Inference Cluster (DLRM Trace)", NSDI '25.
+            </p>
+        </div>
+
+        <p style="font-size: 0.9em; color: #666; margin-bottom: 30px;">
+            Powered by <strong>PySpark</strong>, <strong>FastAPI (MCP)</strong> & <strong>Google Gemini</strong>
+        </p>
+
+        <button id="startChatBtn" class="start-btn">Launch Workspace</button>
+    </div>
+</div>
+
+<div id="chatPage" class="container">
     <header>
-        <h1>CS451 Final Project </h1>
-        <div style="font-size: 1.5em; color: #424242;">h</div>
+        <h1>TraceIQ Workspace</h1>
+        <div style="font-size: 1.2em;"></div> 
     </header>
 
-    <div class="intro-box">
-        <h3>Project Background:</h3>
-        <p>This is a **Spark-driven NL-to-SQL RAG System** designed to query the scheduling trace data from the Alibaba GPU Disaggregated Inference Cluster (DLRM Trace) using natural language.</p>
-        <p>The backend uses **FastAPI (MCP)** to receive queries, transforms them into **Spark SQL** via **Gemini Function Calling**, and executes the distributed query on **PySpark**.</p>
-        <p><strong>Example Queries to Try:</strong></p>
-        <ul>
-            <li>"Count the number of instances for CN and HN roles."</li>
-            <li>"What are the top 5 applications with the highest memory request?"</li>
-            <li>"What is the average scheduling delay for CN instances?"</li>
-        </ul>
-    </div>
-
     <div class="chat-window" id="chatWindow">
+        <div id="suggestionContainer" class="suggestion-container">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #fff;">How can I help you analyze the cluster?</h2>
+                <p style="color: #888;">Select a preset query below or type your own.</p>
+            </div>
+            
+            <div class="card-grid">
+                <div class="suggestion-card" onclick="sendFromSuggestion('List the top 5 applications with the highest memory requests.')">
+                    <div class="card-title">📊 SQL Ranking</div>
+                    <p class="card-text">"List the top 5 applications with the highest memory requests."</p>
+                </div>
+                
+                <div class="suggestion-card" onclick="sendFromSuggestion('Show the scheduling delay distribution (CDF) for CN vs HN.')">
+                    <div class="card-title">📈 Latency Analysis</div>
+                    <p class="card-text">"Show the scheduling delay distribution (CDF) for CN vs HN."</p>
+                </div>
+                
+                <div class="suggestion-card" onclick="sendFromSuggestion('Analyze resource saturation to identify bottlenecks in CPU and GPU.')">
+                    <div class="card-title">🧠 Deep Insight</div>
+                    <p class="card-text">"Analyze resource saturation to identify bottlenecks in CPU and GPU."</p>
+                </div>
+            </div>
+        </div>
         </div>
 
     <div class="input-area">
         <form id="chatForm">
-            <input type="text" id="promptInput" placeholder="Enter your query..." required>
-            <button type="submit" id="sendButton">Send</button>
+            <input type="text" id="promptInput" placeholder="Ask about latency, resources, or anomalies..." required>
+            <button type="submit" id="sendButton" class="send-btn">Send</button>
         </form>
-        <div id="statusMessage" style="margin-top: 10px;"></div>
+        <div id="statusMessage" style="margin-top: 10px; text-align: center; color: #ff5252;"></div>
     </div>
 </div>
 
 <script>
+    // --- UI TOGGLE LOGIC ---
+    const introPage = document.getElementById('introPage');
+    const chatPage = document.getElementById('chatPage');
+    const startChatBtn = document.getElementById('startChatBtn');
+    const suggestionContainer = document.getElementById('suggestionContainer');
+
+    startChatBtn.addEventListener('click', () => {
+        introPage.classList.add('hidden');
+        chatPage.style.display = 'flex'; // Use flex to maintain layout
+    });
+
+    // --- CHAT LOGIC ---
     const API_URL = 'http://localhost:8000/api/chat';
     const chatWindow = document.getElementById('chatWindow');
     const chatForm = document.getElementById('chatForm');
@@ -219,103 +217,94 @@
     const sendButton = document.getElementById('sendButton');
     const statusMessage = document.getElementById('statusMessage');
 
-    // ------------------------------------
-    // Helper Function: Append Message to UI
-    // ------------------------------------
-    function appendMessage(sender, text, query = null) {
+    // Function to handle clicking a suggestion card
+    function sendFromSuggestion(text) {
+        promptInput.value = text;
+        sendMessage(text);
+    }
+
+    function appendMessage(sender, text, query = null, plotData = null) {
+        // Hide suggestions once a message is added
+        if (suggestionContainer.style.display !== 'none') {
+            suggestionContainer.style.display = 'none';
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.classList.add('message', sender);
-        
-        let content = document.createElement('p');
-        // Simple sanitization for markdown bolding
-        content.innerHTML = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>'); 
-        messageDiv.appendChild(content);
+
+        const contentDiv = document.createElement('div');
+        if (sender === 'bot') {
+            contentDiv.innerHTML = marked.parse(text);
+        } else {
+            contentDiv.textContent = text;
+        }
+        contentDiv.querySelectorAll('p').forEach(p => p.style.margin = '0 0 10px 0');
+        messageDiv.appendChild(contentDiv);
 
         if (query) {
             const sqlDiv = document.createElement('div');
             sqlDiv.classList.add('sql-query');
-            sqlDiv.textContent = `SQL Query Generated: ${query}`;
+            sqlDiv.textContent = query.startsWith("PRESET:") ? `PRESET TOOL: ${query.substring(7)}` : `SQL Generated: ${query}`;
             messageDiv.appendChild(sqlDiv);
         }
 
+        if (plotData && plotData.image_base64) {
+            const plotDiv = document.createElement('div');
+            plotDiv.style.marginTop = '15px';
+            const img = document.createElement('img');
+            img.src = `data:image/png;base64,${plotData.image_base64}`;
+            img.style.maxWidth = '100%'; img.style.borderRadius = '8px';
+            plotDiv.appendChild(img);
+            messageDiv.appendChild(plotDiv);
+        }
+
         chatWindow.appendChild(messageDiv);
-        chatWindow.scrollTop = chatWindow.scrollHeight; // Scroll to bottom
+        chatWindow.scrollTop = chatWindow.scrollHeight; 
     }
 
-    // ------------------------------------
-    // Core Function: Send Request and Handle Response
-    // ------------------------------------
     async function sendMessage(prompt) {
         if (!prompt.trim()) return;
-
-        // 1. Display user message
         appendMessage('user', prompt);
         
-        // Disable input and button
+        promptInput.value = '';
         promptInput.disabled = true;
         sendButton.disabled = true;
-        statusMessage.textContent = 'Thinking... (Generating SQL via Gemini)';
+        statusMessage.textContent = 'Thinking... (TraceIQ is analyzing data)';
 
         try {
-            // 2. Send request to FastAPI's /api/chat endpoint
             const response = await fetch(API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: prompt })
             });
 
-            if (!response.ok) {
-                statusMessage.textContent = `Backend Error: ${response.statusText}`;
-                appendMessage('bot', `Sorry, the server failed to execute the query. Please check the terminal logs.`, null);
-                return;
-            }
+            if (!response.ok) throw new Error(response.statusText);
 
             const data = await response.json();
+            statusMessage.textContent = '';
             
-            statusMessage.textContent = 'Summarizing results...';
-
-            // 3. Display bot response
-            let botText = data.response;
-            let sqlQuery = data.sql_query;
-
-            // Check for error messages
-            if (botText && botText.includes("Error")) {
-                 statusMessage.textContent = 'RAG Process Failed';
-                 appendMessage('bot', botText, sqlQuery);
+            // Handle specific error in bot response
+            if (data.response && data.response.includes("Error")) {
+                 appendMessage('bot', data.response, data.sql_query, data.plot_data);
             } else {
-                 statusMessage.textContent = '';
-                 appendMessage('bot', botText, sqlQuery);
+                 appendMessage('bot', data.response, data.sql_query, data.plot_data);
             }
 
-
         } catch (error) {
-            console.error('Fetch Error:', error);
-            statusMessage.textContent = 'Connection Error: Could not reach the backend server (http://localhost:8000). Please ensure mcp_server.py is running.';
-            appendMessage('bot', `Connection Error: Failed to fetch data.`, null);
+            console.error('Error:', error);
+            statusMessage.textContent = 'Connection Error: Check backend.';
+            appendMessage('bot', `System Error: Could not reach the backend service.`);
         } finally {
-            // Restore input state
-            promptInput.value = '';
             promptInput.disabled = false;
             sendButton.disabled = false;
             promptInput.focus();
         }
     }
 
-    // ------------------------------------
-    // Event Listener
-    // ------------------------------------
     chatForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const prompt = promptInput.value;
-        sendMessage(prompt);
+        sendMessage(promptInput.value);
     });
-
-    // Initial load message
-    window.onload = () => {
-        appendMessage('bot', 'Welcome to the Cluster Scheduling RAG System! Please enter your data query below.', null);
-    }
 </script>
 
 </body>

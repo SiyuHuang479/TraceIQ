@@ -80,6 +80,58 @@ app.add_middleware(
 
 
 
+
+# ========== System Prompt / Context ============
+# ======== System Prompt / Context ========
+SYSTEM_INSTRUCTION = """
+You are "TraceIQ", an expert Data Analyst and Site Reliability Engineer (SRE) specializing in Alibaba's GPU-disaggregated inference clusters (DLRM Trace).
+Your goal is to assist users in analyzing the operational characteristics of 156 inference services and 23,871 inference instances using PySpark.
+
+### 1. Dataset Context & Domain Knowledge
+- **Source:** Alibaba Cluster Trace (NSDI '25).
+- **Workload:** Latency-Sensitive (LS) Deep Learning Recommendation Models.
+- **Architecture:** - **CN (CPU Node):** Handles embedding lookups (Role='CN').
+  - **HN (Heterogeneous GPU Node):** Handles heavy model inference (Role='HN').
+- **Key Metric:** Scheduling Delay = `scheduled_time` - `creation_time`.
+
+### 2. Database Schema (Table: `instances`)
+You have access to a single Spark SQL table named `instances`.
+| Column Name | Type | Description |
+| :--- | :--- | :--- |
+| `instance_sn` | String | Unique identifier for the instance. |
+| `role` | String | 'CN' or 'HN'. Use this for filtering or grouping. |
+| `app_name` | String | Application group ID (e.g., 'app_0'). |
+| `cpu_request` | Double | CPU cores requested. |
+| `cpu_limit` | Double | Max CPU cores allowed. |
+| `gpu_request` | Double | GPUs requested (0 for CN, >0 for HN). |
+| `gpu_limit` | Double | Max GPUs allowed. |
+| `memory_request` | Double | Memory requested (GiB). |
+| `memory_limit` | Double | Max Memory allowed (GiB). |
+| `creation_time` | Double | Timestamp (Seconds relative to trace start). |
+| `scheduled_time` | Double | Timestamp (Seconds). **Can be NULL**. |
+| `deletion_time` | Double | Timestamp (Seconds). |
+
+### 3. Available Tools (Function Calling)
+- **execute_spark_sql_query(sql_query):** - Use for retrieving numbers, rankings, averages, or specific records.
+    - ALWAYS use valid Spark SQL (Hive-style).
+    - Example: `SELECT app_name, AVG(scheduled_time - creation_time) as delay FROM instances GROUP BY app_name ORDER BY delay DESC LIMIT 5`
+- **get_delay_distribution_plot():**
+    - Trigger when user asks for: "visualize delay", "CDF", "latency distribution", "plot comparison".
+    - Returns a CDF Plot **AND** a `statistics` object (Min, Mean, P50, P90, P95, P99, Max).
+    - x-axis: delay in seconds
+- **get_resource_saturation_plot():**
+    - Trigger when user asks for: "resource bottlenecks", "saturation", "usage vs limit", "box plot".
+    - Returns a box plot of (Request / Limit) ratios **AND** `statistics` (Mean, Median, StdDev, Max) for CPU/Mem/GPU.
+
+### 4. Response Guidelines
+- **Be Professional:** Summarize findings clearly.
+- **Handle Missing Data:** When calculating delay, always filter `WHERE scheduled_time IS NOT NULL`.
+- **Contextualize:** If HN delay is high, explain it might be due to GPU resource contention.
+- **Plotting:** If a plot is generated, briefly describe what the user is seeing in the image.
+"""
+
+
+
 def load_tool_declaration_internal():
     global TOOL_DECLARATIONS
     
@@ -87,50 +139,61 @@ def load_tool_declaration_internal():
     from time import sleep
     sleep(2) 
 
+    
+
     try:
-        response = requests.get(OPENAPI_URL)
-        response.raise_for_status()
+       sql_tool_description = """
+        Executes Spark SQL queries against the 'instances' table.
+        Schema & Fields:
+        - instance_sn (string): Unique ID.
+        - role (string): 'CN' (CPU Node) or 'HN' (Heterogeneous GPU Node).
+        - app_name (string): Application group identifier (e.g., 'app_0').
+        - cpu/gpu/memory/disk_request & _limit (double): Resource specs.
+        - creation_time, scheduled_time, deletion_time (double): Timestamps in seconds.
         
-        openapi_spec = response.json()
-        
-        
-        tool_declaration_data = {
+        Usage Tips:
+        - To calculate scheduling delay: `SELECT (scheduled_time - creation_time) ...`
+        - To find bottlenecks: `SELECT (memory_request / memory_limit) ...`
+        - Always filter out NULLs when doing math: `WHERE scheduled_time IS NOT NULL`.
+        """
+       
+       tool_declaration_data = {
             'name': 'execute_spark_sql_query',
-            'description': openapi_spec['paths']['/tools/spark_sql_query']['post']['description'],
+            'description': sql_tool_description,
             'parameters': {
                 'type': 'object',
-                'properties': {'sql_query': {'type': 'string', 'description': 'The Spark SQL query to execute.'}},
+                'properties': {'sql_query': {'type': 'string', 'description': 'Valid Spark SQL query (SELECT only).'}},
                 'required': ['sql_query']
             }
         }
-
-        delay_plot_declaration = types.FunctionDeclaration(
+       
+       delay_plot_declaration = types.FunctionDeclaration(
             name='get_delay_distribution_plot',
-            description="Generate a plot comparing the Cumulative Distribution Function (CDF) of schedulingfor CN and HN instances. USE THIS tool when the user asks for a 'comparison plot', 'distribution', or 'delay CDF'",
+            description="Generates a Cumulative Distribution Function (CDF) plot to visualize Scheduling Delay. Essential for analyzing 'Long-Tail Latency' and comparing the performance gap between 'CN' and 'HN' roles. Triggers on: 'plot delay', 'latency distribution', 'CDF', 'compare CN and HN'.",
             parameters={
                 'type': 'object',
                 'properties':{},
                 'required':[]
             }
         )
-
-        saturation_plot_declaration = types.FunctionDeclaration(
+       
+       saturation_plot_declaration = types.FunctionDeclaration(
             name='get_resource_saturation_plot',
-            description="Generates a box plot comparing the saturation (Request / Limit ratio) of CPU, Memory, and GPU. USE THIS tool when the user asks about 'bottlenecks', 'resource efficiency', 'saturation', or 'limit usage'.",
+            description="Generates a Box Plot analyzing Resource Saturation (Request / Limit ratio) for CPU, Memory, and GPU. Helps identify over-provisioning (ratio < 1) or resource bottlenecks (ratio >= 1). Triggers on: 'resource usage', 'saturation plot', 'bottlenecks', 'efficiency'.",
             parameters={
                 'type': 'object',
                 'properties': {},
                 'required': []
             }
         )
-        
-        TOOL_DECLARATIONS = [
+       
+       TOOL_DECLARATIONS = [
             types.Tool(function_declarations=[types.FunctionDeclaration(**tool_declaration_data)]),
             types.Tool(function_declarations=[delay_plot_declaration]),
             types.Tool(function_declarations=[saturation_plot_declaration])
         ]
-        
-        print("✅ Tool declarations successfully prepared for Gemini.")
+       
+       print("✅ Tool declarations successfully prepared for Gemini.")
         
     except Exception as e:
         print(f"❌ Error during internal tool loading: {e}")
@@ -195,8 +258,7 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=user_prompt,
-        config=types.GenerateContentConfig(tools=TOOL_DECLARATIONS)
-    )
+        config=types.GenerateContentConfig(tools=TOOL_DECLARATIONS, system_instruction=SYSTEM_INSTRUCTION))
     
     if not response.function_calls:
         # LLM reply directly

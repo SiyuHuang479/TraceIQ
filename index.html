@@ -84,8 +84,15 @@
             height: 100%; opacity: 1; transition: opacity 0.3s;
         }
         .card-grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px; width: 100%; margin-top: 20px;
+            display: grid; 
+            grid-template-columns: repeat(2, 1fr); /* 核心修改：强制固定为 2 列 */
+            gap: 20px; /* 稍微增加一点间距，让呼吸感更好 */
+            width: 100%; 
+            max-width: 650px; /* 新增：限制最大宽度，防止卡片在宽屏上被拉得太长太扁 */
+            margin-top: 30px;
+            /* 确保 Grid 整体在父容器中居中（因为我们在 suggestion-container 里用了 flex center，这里不用 auto margin 应该也可以，但加上更保险） */
+            margin-left: auto;
+            margin-right: auto;
         }
         .suggestion-card {
             background-color: #2d2d2d; border: 1px solid #444; padding: 15px;
@@ -172,17 +179,22 @@
             <div class="card-grid">
                 <div class="suggestion-card" onclick="sendFromSuggestion('List the top 5 applications with the highest memory requests.')">
                     <div class="card-title">📊 SQL Ranking</div>
-                    <p class="card-text">"List the top 5 applications with the highest memory requests."</p>
+                    <p class="card-text">"List top 5 apps by memory usage."</p>
                 </div>
                 
                 <div class="suggestion-card" onclick="sendFromSuggestion('Show the scheduling delay distribution (CDF) for CN vs HN.')">
-                    <div class="card-title">📈 Latency Analysis</div>
-                    <p class="card-text">"Show the scheduling delay distribution (CDF) for CN vs HN."</p>
+                    <div class="card-title">🚀 Latency Analysis</div>
+                    <p class="card-text">"Compare scheduling delay (CDF)."</p>
                 </div>
                 
                 <div class="suggestion-card" onclick="sendFromSuggestion('Analyze resource saturation to identify bottlenecks in CPU and GPU.')">
-                    <div class="card-title">🧠 Deep Insight</div>
-                    <p class="card-text">"Analyze resource saturation to identify bottlenecks in CPU and GPU."</p>
+                    <div class="card-title">🔥 Resource Saturation</div>
+                    <p class="card-text">"Identify CPU/GPU bottlenecks."</p>
+                </div>
+
+                <div class="suggestion-card" onclick="sendFromSuggestion('Compare the lifetime distribution of CN and HN instances.')">
+                    <div class="card-title">⏱️ Lifetime Analysis</div>
+                    <p class="card-text">"How long do instances survive?"</p>
                 </div>
             </div>
         </div>

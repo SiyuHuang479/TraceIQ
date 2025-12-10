@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 
 from pyspark.sql import SparkSession
+import pyspark.sql.functions as F 
 import requests 
 from google import genai 
 from google.genai import types 
@@ -122,6 +123,9 @@ You have access to a single Spark SQL table named `instances`.
 - **get_resource_saturation_plot():**
     - Trigger when user asks for: "resource bottlenecks", "saturation", "usage vs limit", "box plot".
     - Returns a box plot of (Request / Limit) ratios **AND** `statistics` (Mean, Median, StdDev, Max) for CPU/Mem/GPU.
+- **get_lifetime_distribution_plot():**
+    - Trigger: "lifetime", "survival time", "how long do they run", "churn rate".
+    - Returns a CDF plot. Use Stats (P50, Max) to determine if workloads are "Long-Running" (stable) or "Short-Lived" (volatile).
 
 ### 4. Response Guidelines
 - **Be Professional:** Summarize findings clearly.
@@ -139,10 +143,8 @@ def load_tool_declaration_internal():
     from time import sleep
     sleep(2) 
 
-    
-
     try:
-       sql_tool_description = """
+        sql_tool_description = """
         Executes Spark SQL queries against the 'instances' table.
         Schema & Fields:
         - instance_sn (string): Unique ID.
@@ -156,8 +158,8 @@ def load_tool_declaration_internal():
         - To find bottlenecks: `SELECT (memory_request / memory_limit) ...`
         - Always filter out NULLs when doing math: `WHERE scheduled_time IS NOT NULL`.
         """
-       
-       tool_declaration_data = {
+        
+        tool_declaration_data = {
             'name': 'execute_spark_sql_query',
             'description': sql_tool_description,
             'parameters': {
@@ -167,7 +169,7 @@ def load_tool_declaration_internal():
             }
         }
        
-       delay_plot_declaration = types.FunctionDeclaration(
+        delay_plot_declaration = types.FunctionDeclaration(
             name='get_delay_distribution_plot',
             description="Generates a Cumulative Distribution Function (CDF) plot to visualize Scheduling Delay. Essential for analyzing 'Long-Tail Latency' and comparing the performance gap between 'CN' and 'HN' roles. Triggers on: 'plot delay', 'latency distribution', 'CDF', 'compare CN and HN'.",
             parameters={
@@ -177,7 +179,7 @@ def load_tool_declaration_internal():
             }
         )
        
-       saturation_plot_declaration = types.FunctionDeclaration(
+        saturation_plot_declaration = types.FunctionDeclaration(
             name='get_resource_saturation_plot',
             description="Generates a Box Plot analyzing Resource Saturation (Request / Limit ratio) for CPU, Memory, and GPU. Helps identify over-provisioning (ratio < 1) or resource bottlenecks (ratio >= 1). Triggers on: 'resource usage', 'saturation plot', 'bottlenecks', 'efficiency'.",
             parameters={
@@ -187,13 +189,25 @@ def load_tool_declaration_internal():
             }
         )
        
-       TOOL_DECLARATIONS = [
-            types.Tool(function_declarations=[types.FunctionDeclaration(**tool_declaration_data)]),
-            types.Tool(function_declarations=[delay_plot_declaration]),
-            types.Tool(function_declarations=[saturation_plot_declaration])
+        # 新增 Tool Declaration
+        lifetime_plot_declaration = types.FunctionDeclaration(
+            name='get_lifetime_distribution_plot',
+            description="Generates a CDF plot of Instance Lifetime (duration from creation to deletion). Returns statistics (Mean, Median, Max). Use this to analyze stability vs volatility (churn). Triggers on: 'lifetime', 'how long instances run', 'survival analysis'.",
+            parameters={
+                'type': 'object',
+                'properties': {},
+                'required': []
+            }
+        )
+    
+        TOOL_DECLARATIONS = [
+                types.Tool(function_declarations=[types.FunctionDeclaration(**tool_declaration_data)]),
+                types.Tool(function_declarations=[delay_plot_declaration]),
+                types.Tool(function_declarations=[saturation_plot_declaration]),
+                types.Tool(function_declarations=[lifetime_plot_declaration]) 
         ]
        
-       print("✅ Tool declarations successfully prepared for Gemini.")
+        print("✅ Tool declarations successfully prepared for Gemini.")
         
     except Exception as e:
         print(f"❌ Error during internal tool loading: {e}")
@@ -279,6 +293,10 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
     elif func_name == 'get_resource_saturation_plot':
         sql_query = "PRESET: get_resource_saturation_plot"
         query_results = await run_in_threadpool(get_resource_saturation_plot_data)
+    
+    elif func_name == 'get_lifetime_distribution_plot':
+        sql_query = "PRESET: get_lifetime_distribution_plot"
+        query_results = await run_in_threadpool(get_lifetime_distribution_plot_data)
     
     else:
         return {"response": f"Unexpected function call: {func_name}", "sql_query": None}
@@ -456,6 +474,72 @@ def get_resource_saturation_plot_data():
         "image_base64": image_base64
     }
     
+
+'''
+preset tool:
+generate a CDF plot for instance lifetime (deletion_time - creation_time)
+'''
+def get_lifetime_distribution_plot_data():
+
+    # 1. Get Data
+    query = """
+        SELECT role, (deletion_time - creation_time) AS lifetime
+        FROM instances
+        WHERE deletion_time IS NOT NULL AND creation_time IS NOT NULL AND (deletion_time - creation_time) > 0
+    """
+    lifetime_df = spark.sql(query).cache()
+    pdf = lifetime_df.toPandas()
+
+    cn_life = pdf[pdf['role'] == 'CN']['lifetime'].dropna().values
+    hn_life = pdf[pdf['role'] == 'HN']['lifetime'].dropna().values
+
+    # 2. calculate statistics
+    def calculate_stats(data):
+        if len(data) == 0: return {"status": "no_data"}
+        return {
+            "count": int(len(data)),
+            "mean": float(np.mean(data)),
+            "median_p50": float(np.median(data)),
+            "p90": float(np.percentile(data, 90)),
+            "max": float(np.max(data))
+    }
+
+    stats = {
+        "CN_lifetime_stats": calculate_stats(cn_life),
+        "HN_lifetime_stats": calculate_stats(hn_life)
+    }
+
+    # 3. plot CDF
+    plt.figure(figsize=(10, 6))
+    
+    # Plot CN
+    plt.hist(cn_life, bins=1000, cumulative=True, density=True, histtype='step', 
+             label='CN Instances', color='tab:blue', linewidth=2)
+    # Plot HN
+    plt.hist(hn_life, bins=1000, cumulative=True, density=True, histtype='step', 
+             label='HN Instances', color='tab:red', linewidth=2)
+    
+    plt.xscale('log') # Log scale is crucial for lifetime analysis
+    plt.title('Instance Lifetime Distribution (CDF)')
+    plt.xlabel('Lifetime (Seconds) - Log Scale')
+    plt.ylabel('Cumulative Probability')
+    plt.legend(loc='lower right')
+    plt.grid(True, which="both", ls="--", alpha=0.5)
+
+    # 4. Encode
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight')
+    plt.close()
+    
+    image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+    buf.close()
+
+    return {
+        "plot_type": "CDF_Lifetime_Distribution",
+        "description": "CDF plot showing how long instances survive before deletion. Short lifetimes indicate scaling events or instability.",
+        "statistics": stats,
+        "image_base64": image_base64
+    }
 
 
 

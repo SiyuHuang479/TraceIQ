@@ -64,61 +64,10 @@ df_clean = df.filter(request_limit_check & time_sequence_check)
 
 
 
-
-
-
-# ------------------ get insights ------------------
-# scheduling delays in terms of CN and HN
-valid_df_delays = (
-    df_clean
-    .withColumn("sched_delay", col("scheduled_time") - col("creation_time"))   # calculate scheduling delay
-    .filter(col("sched_delay").isNotNull() & (col("sched_delay") >= 0))         # filter out null or negative delays
-)
-
-# debugging print
-valid_delay_count = valid_df_delays.count()
-print(f"Total rows in df_clean: {df_clean.count()}")
-print(f"Total rows in valid_df_delays: {valid_delay_count}")
-
-# median and average scheduling delays
-delay_stats = (
-    valid_df_delays
-    .groupBy("role")
-    .agg(avg("sched_delay").alias("avg_sched_delay"),
-         expr("percentile_approx(sched_delay, 0.5)").alias("median_sched_delay"))
-    .orderBy("role")
-)
-
-# show delay stats
-print("HN vs CN Scheduling Delays:")
-delay_stats.show()
-
-
-PERCENTILES = [0.5, 0.90, 0.95, 0.99] # 中位数, P90, P95, P99
-
-delay_percentiles = (
-    valid_df_delays
-    .groupBy("role")
-    .agg(
-        avg("sched_delay").alias("avg_sched_delay"),
-        # 使用 percentile_approx 计算多个百分位数 (结果是一个数组)
-        expr("percentile_approx(sched_delay, array(0.5, 0.90, 0.95, 0.99))").alias("delay_percentiles")
-    )
-    .orderBy("role")
-)
-
-print("HN vs CN 调度延迟百分位数 (P50, P90, P95, P99):")
-delay_percentiles.show(truncate=False)
-
-
-
 # ------------------ save results  ------------------
 OUTPUT_PARQUET_PATH = "cluster_trace.parquet"
 df_clean.write.mode("overwrite").parquet(OUTPUT_PARQUET_PATH)
 print(f"Cleaned data saved to {OUTPUT_PARQUET_PATH}")
-
-
-
 
 
 

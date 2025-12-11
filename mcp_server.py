@@ -2,6 +2,7 @@
 
 # ======== imports ========
 import json
+import math
 import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -81,8 +82,20 @@ app.add_middleware(
 
 
 
+# helper function
+def safe_float(value):
+    try:
+        if value is None:
+            return 0.0
+        val = float(value)
+        if math.isnan(val) or math.isinf(val):
+            return 0.0
+        return val
+    except:
+        return 0.0
 
-# ========== System Prompt / Context ============
+
+
 # ======== System Prompt / Context ========
 SYSTEM_INSTRUCTION = """
 You are "TraceIQ", an expert Data Analyst and Site Reliability Engineer (SRE) specializing in Alibaba's GPU-disaggregated inference clusters (DLRM Trace).
@@ -136,6 +149,7 @@ You have access to a single Spark SQL table named `instances`.
 
 
 
+# load functions
 def load_tool_declaration_internal():
     global TOOL_DECLARATIONS
     
@@ -189,10 +203,9 @@ def load_tool_declaration_internal():
             }
         )
        
-        # 新增 Tool Declaration
         lifetime_plot_declaration = types.FunctionDeclaration(
             name='get_lifetime_distribution_plot',
-            description="Generates a CDF plot of Instance Lifetime (duration from creation to deletion). Returns statistics (Mean, Median, Max). Use this to analyze stability vs volatility (churn). Triggers on: 'lifetime', 'how long instances run', 'survival analysis'.",
+            description="Generates a **CDF VISUALIZATION (Plot)** of Instance Lifetime (duration from creation to deletion), which is essential for comparing long-tail survival characteristics between CN and HN. Triggers on: 'lifetime distribution', 'survival analysis', 'churn rate'. **DO NOT USE SQL FOR DISTRIBUTIONS.**",
             parameters={
                 'type': 'object',
                 'properties': {},
@@ -233,6 +246,11 @@ async def startup_event():
     operation_id="execute_spark_sql_query"
 )
 
+
+
+
+# ======= MCP tools =============
+
 def execute_spark_sql_query(query: SQLQuery) -> Dict[str, Any]:
     # safety check: only allow SELECT statements
     if not query.sql_query.lower().strip().startswith("select"):
@@ -266,6 +284,10 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
         return {"response": "initializing system... pls try later"}
 
     user_prompt = request.prompt
+
+    print(f"\n--- DEBUG: Received Prompt ---")
+    print(f"User: {user_prompt}")
+    print(f"-----------------------------\n")
     
     # RAG workflow
     # step 1: use LLM to identify whether tool is needed
@@ -273,6 +295,15 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
         model=MODEL_NAME,
         contents=user_prompt,
         config=types.GenerateContentConfig(tools=TOOL_DECLARATIONS, system_instruction=SYSTEM_INSTRUCTION))
+    
+    print(f"\n--- DEBUG: LLM Response ---")
+    if response.function_calls:
+        func_call = response.function_calls[0]
+        print(f"Tool Called: {func_call.name}")
+        print(f"Arguments: {func_call.args}")
+    else:
+        print(f"Direct Text: {response.text[:50]}...")
+    print(f"----------------------------\n")
     
     if not response.function_calls:
         # LLM reply directly
@@ -307,8 +338,16 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
         'args': function_call.args
     }
 
-    def final_llm_call(contents_list, model_name):
-        return client.models.generate_content(model=model_name, contents=contents_list)
+    def final_llm_call(contents_list, model_name, config):
+        # --- FIX: Adding try-except for external API failure ---
+        try:
+            return client.models.generate_content(model=model_name, contents=contents_list, config=config)
+        except google.genai.errors.ServerError as e:
+            print(f"\n🚨 GEMINI SUMMARY FAILED: {e}\n")
+            return types.GenerateContentResponse(
+                text=f"Error: The AI model service failed to summarize the results (503 UNAVAILABLE). The Spark query executed successfully, but the final natural language summary could not be generated. Please try again in a moment."
+            )
+        
     
     contents_for_summary = [
         types.Content(role="user", parts=[types.Part.from_text(text=user_prompt)]),
@@ -319,8 +358,9 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
         types.Content(role="tool", parts=[types.Part.from_function_response(name=func_name, response=query_results)])
     ]
 
+    final_config = types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION)
     response_to_llm = await run_in_threadpool(
-        final_llm_call, contents_for_summary, MODEL_NAME
+        final_llm_call, contents_for_summary, MODEL_NAME, final_config
     )
     
     return {
@@ -331,73 +371,77 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
 
 
 
-
+# ============ PRESET TOOL ===========
 '''
 return CN and HN instances sched_delay_plot in Base64 encoding PNG string
 '''
 def get_delay_distribution_plot_data():
+    # 1. Filter Valid Data using Spark DataFrame API (Lazy Evaluation)
+    df = spark.table(TABLE_NAME)
+    df = df.filter("scheduled_time IS NOT NULL AND creation_time IS NOT NULL") \
+           .withColumn("delay", F.col("scheduled_time") - F.col("creation_time")) \
+           .filter("delay >= 0")
 
-    # get data
-    query = """
-        SELECT role, (scheduled_time - creation_time) AS sched_delay
-        FROM instances
-        WHERE (scheduled_time IS NOT NULL AND creation_time IS NOT NULL) AND (scheduled_time - creation_time) >= 0
-    """
-    delay_df = spark.sql(query).cache()
-
-    # put data to pandas 
-    pandas_df = delay_df.toPandas()
-
-    cn_delays = pandas_df[pandas_df['role'] == 'CN']['sched_delay'].dropna().values
-    hn_delays = pandas_df[pandas_df['role'] == 'HN']['sched_delay'].dropna().values
-
-    delay_df.unpersist()
-
-    def calculate_stats(data):
-        if len(data) == 0:
-            return {"status": "no_data"}
-        return {
-            "count": int(len(data)),
-            "mean": float(np.mean(data)),
-            "min": float(np.min(data)),
-            "median_p50": float(np.median(data)),
-            "p90": float(np.percentile(data, 90)),
-            "p95": float(np.percentile(data, 95)), # 关键：尾部延迟
-            "p99": float(np.percentile(data, 99)), # 关键：极端长尾
-            "max": float(np.max(data))
-        }
+    # 2. Define probabilities for CDF curve (0% to 100%, step 1%)
+    # This gives us the shape of the curve without fetching raw data
+    probabilities = [i / 100.0 for i in range(101)]
     
-    stats = {
-        "CN_instances": calculate_stats(cn_delays),
-        "HN_instances": calculate_stats(hn_delays)
-    }
+    # 3. Calculate Stats & CDF Points in ONE Spark Job
+    # Group by Role (CN/HN) and agg
+    results = df.groupBy("role").agg(
+        F.count("*").alias("count"),
+        F.mean("delay").alias("mean"),
+        F.min("delay").alias("min"),
+        F.max("delay").alias("max"),
+        # percentile_approx uses Greenwald-Khanna algorithm (Efficient for Big Data)
+        F.percentile_approx("delay", 0.5, 10000).alias("p50"),
+        F.percentile_approx("delay", 0.9, 10000).alias("p90"),
+        F.percentile_approx("delay", 0.95, 10000).alias("p95"),
+        F.percentile_approx("delay", 0.99, 10000).alias("p99"),
+        # Get the full CDF curve points
+        F.percentile_approx("delay", probabilities, 10000).alias("cdf_points")
+    ).collect() # Trigger Action: Return only 2 rows (CN, HN) to Driver
 
-    # use Matplotlib to draw CDF
+    # 4. Process Data for Plotting (Driver Side)
+    stats_dict = {}
+    
     plt.figure(figsize=(10, 6))
-    plt.hist(cn_delays, bins=500, cumulative=True, density=True, histtype='step', label='CN Instances', color='tab:blue')
-    plt.hist(hn_delays, bins=500, cumulative=True, density=True, histtype='step', label='HN Instances', color='tab:red')
+    colors = {'CN': 'tab:blue', 'HN': 'tab:red'}
+
+    for row in results:
+        role = row['role']
+        cdf_x = row['cdf_points'] # The delay values at each percentile
+        
+        # Prepare stats output
+        stats_dict[f"{role}_instances"] = {
+            "count": row['count'], "mean": row['mean'], "min": row['min'],
+            "median_p50": row['p50'], "p90": row['p90'], "p95": row['p95'],
+            "p99": row['p99'], "max": row['max']
+        }
+
+        # Plot CDF using pre-calculated points
+        # x = delay values, y = probabilities (0.0 to 1.0)
+        plt.plot(cdf_x, probabilities, label=f'{role} Instances', color=colors.get(role, 'gray'))
+
     plt.axhline(y=0.99, color='gray', linestyle='--', linewidth=0.8, label='99th Percentile')
     plt.xscale('log') 
-    plt.title('CDF of Scheduling Delay by Instance Role (Log Scale)')
-    plt.xlabel('Scheduling Delay (Seconds)')
+    plt.title('CDF of Scheduling Delay (Calculated via Spark Aggregation)')
+    plt.xlabel('Scheduling Delay (Seconds) - Log Scale')
     plt.ylabel('Cumulative Probability')
     plt.legend(loc='lower right')
     plt.grid(True, which="both", ls="--", alpha=0.6)
 
-    # save image
+    # Encode
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
     plt.close()
-
-    # encode into Base64 string
     image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
     buf.close()
 
-    # return
     return {
         "plot_type": "CDF_Delay_Distribution",
-        "description": "The plot compares the scheduling delay distribution (CDF) between CN and HN instance roles, revealing the long-tail latency differences",
-        "statistics": stats,
+        "description": "CDF generated using distributed percentile approximation in Spark.",
+        "statistics": stats_dict,
         "image_base64": image_base64
     }
 
@@ -407,70 +451,82 @@ preset tool:
 returns a box plot comparing CPU, Memory, and GPU saturation ratios
 '''
 def get_resource_saturation_plot_data():
-    query = """
-        SELECT 
-            (cpu_request / cpu_limit) AS cpu_ratio,
-            (memory_request / memory_limit) AS mem_ratio,
-            (gpu_request / gpu_limit) AS gpu_ratio
-        FROM instances
-        WHERE cpu_limit > 0 AND memory_limit > 0 AND gpu_limit > 0
-    """
-
-    ratio_df = spark.sql(query)
-    pdf = ratio_df.toPandas()
-
-    cpu_data = pdf['cpu_ratio'].dropna().values
-    mem_data = pdf['mem_ratio'].dropna().values
-    gpu_data = pdf['gpu_ratio'].dropna().values
-
-    stats = {
-        "cpu": {
-            "mean": float(np.mean(cpu_data)),
-            "median": float(np.median(cpu_data)),
-            "std_dev": float(np.std(cpu_data)),
-            "max": float(np.max(cpu_data)),
-            "min": float(np.min(cpu_data))
-        },
-        "memory": {
-            "mean": float(np.mean(mem_data)),
-            "median": float(np.median(mem_data)),
-            "std_dev": float(np.std(mem_data))
-        },
-        "gpu": {
-            "mean": float(np.mean(gpu_data)),
-            "median": float(np.median(gpu_data)),
-            "std_dev": float(np.std(gpu_data))
-        }
-    }
-
-    # draw 
-    plt.figure(figsize=(10,6))
-    bplot = plt.boxplot([cpu_data, mem_data, gpu_data], 
-                        labels=['CPU', 'Memory', 'GPU'], 
-                        patch_artist=True,
-                        medianprops=dict(color="black", linewidth=1.5))
-    colors = ['lightblue', 'lightgreen', 'pink']
-    for patch, color in zip(bplot['boxes'], colors):
-        patch.set_facecolor(color)
-    plt.axhline(y=1.0, color='red', linestyle='--', linewidth=1.5, label='Limit Cap (100%)')
+    df = spark.table(TABLE_NAME).filter("cpu_limit > 0 AND memory_limit > 0 AND gpu_limit > 0")
     
-    plt.title('Resource Saturation Analysis (Request / Limit Ratio)')
-    plt.ylabel('Saturation Ratio (1.0 = Limit Reached)')
-    plt.grid(True, axis='y', linestyle='--', alpha=0.6)
-    plt.legend()
+    # Calculate Ratios
+    df = df.select(
+        (F.col("cpu_request") / F.col("cpu_limit")).alias("cpu"),
+        (F.col("memory_request") / F.col("memory_limit")).alias("mem"),
+        (F.col("gpu_request") / F.col("gpu_limit")).alias("gpu")
+    )
 
-    # encode
+    # Calculate Boxplot Stats in Spark
+    # We need: Min, Q1 (25%), Median (50%), Q3 (75%), Max, Mean
+    stats_query = []
+    resources = ['cpu', 'mem', 'gpu']
+    
+    for res in resources:
+        stats_query.extend([
+            F.mean(res).alias(f"{res}_mean"),
+            F.min(res).alias(f"{res}_min"),
+            F.max(res).alias(f"{res}_max"),
+            F.stddev(res).alias(f"{res}_std"),
+            # Get Q1, Median, Q3 in one go
+            F.percentile_approx(res, [0.25, 0.5, 0.75], 10000).alias(f"{res}_quantiles")
+        ])
+    
+    row = df.agg(*stats_query).collect()[0] # Only 1 row returned
+
+    # Prepare Data for Matplotlib `bxp`
+    plot_data = []
+    stats_output = {}
+
+    for res in resources:
+        quantiles = row[f"{res}_quantiles"] # [q1, med, q3]
+        
+        # Structure for ax.bxp()
+        item = {
+            'label': res.upper(),
+            'mean': row[f"{res}_mean"],
+            'med': quantiles[1],
+            'q1': quantiles[0],
+            'q3': quantiles[2],
+            'whislo': row[f"{res}_min"], # Simplification: use min/max for whiskers
+            'whishi': row[f"{res}_max"],
+            'fliers': [] # We don't fetch outliers to save bandwidth
+        }
+        plot_data.append(item)
+        
+        stats_output[res] = {
+            "mean": row[f"{res}_mean"], "median": quantiles[1],
+            "max": row[f"{res}_max"], "std_dev": row[f"{res}_std"]
+        }
+
+    # Plotting
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Draw using pre-calculated stats
+    ax.bxp(plot_data, showfliers=False, patch_artist=True)
+    
+    # Color customization (harder with bxp but possible)
+    # Adding horizontal line
+    ax.axhline(y=1.0, color='red', linestyle='--', linewidth=1.5, label='Limit Cap (100%)')
+    
+    ax.set_title('Resource Saturation Analysis (Request / Limit Ratio)')
+    ax.set_ylabel('Saturation Ratio (1.0 = Limit Reached)')
+    ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+    ax.legend()
+
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight')
     plt.close()
-    
     image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
     buf.close()
     
     return {
         "plot_type": "Resource_Saturation_Boxplot",
-        "description": "Box plot showing the distribution of resource saturation (Request/Limit) for CPU, Memory, and GPU. Values close to or above 1.0 indicate bottlenecks.",
-        "statistics": stats,
+        "description": "Box plot generated from distributed Spark statistics.",
+        "statistics": stats_output,
         "image_base64": image_base64
     }
     
@@ -480,68 +536,89 @@ preset tool:
 generate a CDF plot for instance lifetime (deletion_time - creation_time)
 '''
 def get_lifetime_distribution_plot_data():
-
-    # 1. Get Data
+    # 1. Get Data via Spark SQL
     query = """
         SELECT role, (deletion_time - creation_time) AS lifetime
         FROM instances
-        WHERE deletion_time IS NOT NULL AND creation_time IS NOT NULL AND (deletion_time - creation_time) > 0
+        WHERE deletion_time IS NOT NULL AND creation_time IS NOT NULL
     """
-    lifetime_df = spark.sql(query).cache()
-    pdf = lifetime_df.toPandas()
+    
+    try:
+        pdf = spark.sql(query).toPandas()
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return {
+            "plot_type": "CDF_Lifetime_Distribution",
+            "description": "Error fetching data.",
+            "statistics": {},
+            "image_base64": ""
+        }
 
-    cn_life = pdf[pdf['role'] == 'CN']['lifetime'].dropna().values
-    hn_life = pdf[pdf['role'] == 'HN']['lifetime'].dropna().values
+    # 2. Pandas cleaning
+    pdf['lifetime'] = list(map(lambda x: x if x > 0 else np.nan, pdf['lifetime']))
+    pdf = pdf.dropna(subset=['lifetime'])
 
-    # 2. calculate statistics
+    cn_life = pdf[pdf['role'] == 'CN']['lifetime'].values
+    hn_life = pdf[pdf['role'] == 'HN']['lifetime'].values
+
+    # 3. calculate
     def calculate_stats(data):
-        if len(data) == 0: return {"status": "no_data"}
+        if len(data) == 0: 
+            return {
+                "count": 0, "mean": 0.0, "median_p50": 0.0, 
+                "p90": 0.0, "max": 0.0
+            }
+        
+       
         return {
             "count": int(len(data)),
-            "mean": float(np.mean(data)),
-            "median_p50": float(np.median(data)),
-            "p90": float(np.percentile(data, 90)),
-            "max": float(np.max(data))
-    }
+            "mean": safe_float(float(np.mean(data))),
+            "median_p50": safe_float(float(np.median(data))),
+            "p90": safe_float(float(np.percentile(data, 90))),
+            "max": safe_float(float(np.max(data)))
+        }
 
     stats = {
         "CN_lifetime_stats": calculate_stats(cn_life),
         "HN_lifetime_stats": calculate_stats(hn_life)
     }
 
-    # 3. plot CDF
-    plt.figure(figsize=(10, 6))
-    
-    # Plot CN
-    plt.hist(cn_life, bins=1000, cumulative=True, density=True, histtype='step', 
-             label='CN Instances', color='tab:blue', linewidth=2)
-    # Plot HN
-    plt.hist(hn_life, bins=1000, cumulative=True, density=True, histtype='step', 
-             label='HN Instances', color='tab:red', linewidth=2)
-    
-    plt.xscale('log') # Log scale is crucial for lifetime analysis
-    plt.title('Instance Lifetime Distribution (CDF)')
-    plt.xlabel('Lifetime (Seconds) - Log Scale')
-    plt.ylabel('Cumulative Probability')
-    plt.legend(loc='lower right')
-    plt.grid(True, which="both", ls="--", alpha=0.5)
+    print("\n--- DEBUG: Lifetime Stats ---")
+    print(json.dumps(stats, indent=2))
+    print("-----------------------------\n")
 
-    # 4. Encode
+    # 4. draw
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    if len(cn_life) > 0:
+        ax.hist(cn_life, bins=1000, cumulative=True, density=True, histtype='step', 
+                 label='CN Instances', color='tab:blue', linewidth=2)
+    
+    if len(hn_life) > 0:
+        ax.hist(hn_life, bins=1000, cumulative=True, density=True, histtype='step', 
+                 label='HN Instances', color='tab:red', linewidth=2)
+    
+    ax.set_xscale('log') 
+    ax.set_title('Instance Lifetime Distribution (CDF)')
+    ax.set_xlabel('Lifetime (Seconds) - Log Scale')
+    ax.set_ylabel('Cumulative Probability')
+    ax.legend(loc='lower right')
+    ax.grid(True, which="both", ls="--", alpha=0.5)
+
+    # 5. save and close
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight')
-    plt.close()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    plt.close(fig) 
     
     image_base64 = base64.b64encode(buf.getvalue()).decode('utf-8')
     buf.close()
 
     return {
         "plot_type": "CDF_Lifetime_Distribution",
-        "description": "CDF plot showing how long instances survive before deletion. Short lifetimes indicate scaling events or instability.",
+        "description": "CDF plot showing how long instances survive before deletion.",
         "statistics": stats,
         "image_base64": image_base64
     }
-
-
 
 
 

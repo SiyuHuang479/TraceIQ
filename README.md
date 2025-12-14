@@ -13,6 +13,13 @@ The core innovation is combining **PySpark**'s distributed processing power with
 * **API Layer:** FastAPI (MCP Server) - *Serves as the Model-Controller-Proxy layer.*
 * **Visualization:** Matplotlib/Numpy - *Renders analytical plots (CDF, Boxplot) on the fly.*
 
+### ▶️ Demo Video
+
+
+https://github.com/user-attachments/assets/382bbd5d-0a4e-4cdc-a2c0-bc74c5d2fd08
+
+
+
 ---
 
 ## 🚀 How to Start? 

@@ -251,6 +251,7 @@ async def startup_event():
 
 # ======= MCP tools =============
 
+# 修复 execute_spark_sql_query 函数
 def execute_spark_sql_query(query: SQLQuery) -> Dict[str, Any]:
     # safety check: only allow SELECT statements
     if not query.sql_query.lower().strip().startswith("select"):
@@ -260,18 +261,33 @@ def execute_spark_sql_query(query: SQLQuery) -> Dict[str, Any]:
         # execute Spark SQL
         result_df = spark.sql(query.sql_query)
 
-        # transform result to list of dicts
-        result_list = result_df.limit(100).toPandas().to_dict('records')
+        # 1. 提取 Pandas 字典列表 (保留 Numpy 类型)
+        result_list_pandas = result_df.limit(100).toPandas().to_dict('records')
+        
+        # 2. 强制进行安全类型转换 (防止 Numpy 类型导致的序列化崩溃)
+        safe_result_list = []
+        for record in result_list_pandas:
+            safe_record = {}
+            for k, v in record.items():
+                if isinstance(v, (np.float32, np.float64, np.int32, np.int64)):
+                    # 强制将所有 Numpy 数值类型转换为 Python float/int
+                    safe_record[k] = safe_float(float(v))
+                elif isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    # 捕获原生 Python float 里的 NaN/Inf
+                    safe_record[k] = safe_float(v)
+                else:
+                    safe_record[k] = v
+            safe_result_list.append(safe_record)
+
 
         return {
             "query_executed": query.sql_query,
-            "result_count": len(result_list),
-            "results": result_list
+            "result_count": len(safe_result_list),
+            "results": safe_result_list
         }
     except Exception as e:
         # catch SQL errors
         raise HTTPException(status_code=500, detail=f"Spark SQL Execution Error: {str(e)}")
-
 
 
 
@@ -339,13 +355,19 @@ async def chat_endpoint(request: ChatRequest) -> Dict[str, Any]:
     }
 
     def final_llm_call(contents_list, model_name, config):
-        # --- FIX: Adding try-except for external API failure ---
         try:
             return client.models.generate_content(model=model_name, contents=contents_list, config=config)
-        except google.genai.errors.ServerError as e:
+        except genai.errors.ServerError as e: 
+            # 捕获 503 错误，返回 LLM 失败信息
             print(f"\n🚨 GEMINI SUMMARY FAILED: {e}\n")
             return types.GenerateContentResponse(
-                text=f"Error: The AI model service failed to summarize the results (503 UNAVAILABLE). The Spark query executed successfully, but the final natural language summary could not be generated. Please try again in a moment."
+                text=f"Error: The AI model service failed to summarize the results (External API Error: {e.status_code}). The Spark tool executed successfully, but the final summary could not be generated. Please wait and try again."
+            )
+        # FIX: 还需要捕获 ClientError (429 Quota Exceeded)
+        except genai.errors.ClientError as e: 
+            print(f"\n🚨 GEMINI QUOTA EXCEEDED (429): {e}\n")
+            return types.GenerateContentResponse(
+                text=f"Error: The AI model failed due to Quota Exceeded (429). The Spark tool executed successfully. Please wait {int(e.retry_delay)} seconds and try again."
             )
         
     

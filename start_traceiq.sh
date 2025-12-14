@@ -10,6 +10,19 @@ echo -e "${BLUE}       TraceIQ System Launcher v1.0      ${NC}"
 echo -e "${BLUE}=========================================${NC}"
 echo ""
 
+echo "[0/3] Ensuring Python build tools are available..."
+
+python -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1
+
+if [ $? -ne 0 ]; then
+  echo "✘ Failed to install setuptools/wheel."
+  echo "Please ensure your Python environment is properly configured."
+  exit 1
+fi
+
+echo "✔ Python build tools ready."
+
+
 # 1. check & install dependencies
 echo -e "${YELLOW}[1/3] Checking dependencies...${NC}"
 if pip install -r requirements.txt; then

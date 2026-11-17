@@ -23,6 +23,19 @@ https://github.com/user-attachments/assets/382bbd5d-0a4e-4cdc-a2c0-bc74c5d2fd08
 ---
 
 ## 🚀 How to Start? 
+
+### Configure Your Gemini API Key
+
+Before using either launch method below, set your own Gemini API key in the terminal where you will start TraceIQ. From the project directory, run:
+
+```bash
+export GEMINI_API_KEY="your_gemini_api_key_here"
+```
+
+Replace the placeholder with your own key, then follow the automated or manual instructions below in the same terminal. The backend reads `GEMINI_API_KEY` from the environment, and the launcher passes it through to the backend. API usage is charged against the account associated with your key.
+
+Set the variable again when you open a new terminal. TraceIQ does not automatically load `.env` files. Never put a real API key in source code or commit it to Git. The server stops with a setup error if the variable is missing or blank.
+
 ### A. Automated Launch
 
 The `start_traceiq.sh` script automatically installs dependencies, runs the ETL process, and launches both the backend server and the frontend application.

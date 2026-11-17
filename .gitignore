@@ -1,0 +1,17 @@
+# Local credentials and environment configuration
+.env
+.env.*
+!.env.example
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Generated Spark data
+cluster_trace.parquet/
+spark-warehouse/
+
+# macOS metadata
+.DS_Store

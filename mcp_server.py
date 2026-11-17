@@ -28,7 +28,12 @@ from starlette.concurrency import run_in_threadpool
 # ======== configurations ========
 OUTPUT_PARQUET_PATH = "cluster_trace.parquet"
 TABLE_NAME = "instances"
-GEMINI_API_KEY = "AIzaSyCiUm5i5YcDBe2d_iHYhPhoRYUbYR2I4BM"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+if not GEMINI_API_KEY:
+    raise RuntimeError(
+        "GEMINI_API_KEY is required. Set this environment variable to your own "
+        "Gemini API key before starting TraceIQ. See README.md for setup instructions."
+    )
 FASTAPI_BASE_URL = "http://localhost:8000"
 OPENAPI_URL = f"{FASTAPI_BASE_URL}/openapi.json"
 

@@ -19,6 +19,18 @@ The core innovation is combining **PySpark**'s distributed processing power with
 https://github.com/user-attachments/assets/382bbd5d-0a4e-4cdc-a2c0-bc74c5d2fd08
 
 
+---
+
+### 🤖 End-to-End Interaction Flow
+
+1. A user asks a **natural language question** (e.g., via the web UI).
+2. The LLM interprets the question and decides which MCP tool to invoke.
+3. The MCP server executes distributed computation or visualization logic using Spark.
+4. Results (tables, statistics, plots) are returned to the LLM.
+5. The LLM synthesizes a final, human-readable answer.
+
+This design allows users to **explore and analyze a large-scale GPU inference cluster without writing SQL or Spark code**, while still leveraging the full power of distributed computation.
+
 
 ---
 
@@ -146,18 +158,6 @@ The server exposes the following tools:
 - Computes and compares instance lifetimes.
 - - Generates distribution plots (CDF) using Matplotlib.
 - Outputs both summary statistics and lifetime distribution plots.
-
----
-
-### 🤖 End-to-End Interaction Flow
-
-1. A user asks a **natural language question** (e.g., via the web UI).
-2. The LLM interprets the question and decides which MCP tool to invoke.
-3. The MCP server executes distributed computation or visualization logic using Spark.
-4. Results (tables, statistics, plots) are returned to the LLM.
-5. The LLM synthesizes a final, human-readable answer.
-
-This design allows users to **explore and analyze a large-scale GPU inference cluster without writing SQL or Spark code**, while still leveraging the full power of distributed computation.
 
 ---
 
